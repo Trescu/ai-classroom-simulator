@@ -1,5 +1,5 @@
 import { stageByIndex } from "./mockEngine.js";
-import { classifyUserTurn } from "./router.js";
+import { routeUserMessage } from "./router.js";
 import { normalizeSession, runNextTurn, runStartTurn, runUserTurn } from "./turnController.js";
 
 function normalizeScenario(scenario = "tech_interview") {
@@ -29,19 +29,22 @@ export async function runTurn({
       ? recentTurns
       : safeSession.history.slice(-6);
 
-    const routing = await classifyUserTurn({
-      userText,
-      recentTurns: historyForRouter,
+    const routing = await routeUserMessage({
+      text: userText,
+      history: historyForRouter,
       mode,
       scenario,
       stageId: stage.id,
+      currentQuestion: stage.question,
     });
 
     console.log("router", {
-      addressedTo: routing.addressedTo,
+      targetAgent: routing.targetAgent,
       intent: routing.intent,
+      shouldAdvanceState: routing.shouldAdvanceState,
       recommendedAction: routing.recommendedAction,
       confidence: routing.confidence,
+      reason: routing.reason,
     });
 
     return runUserTurn(safeSession, routing.normalizedUserMessage || userText, routing);

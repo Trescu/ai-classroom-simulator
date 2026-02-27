@@ -206,6 +206,14 @@ function teacherOffTopicRedirect(stage) {
   return `You are off-topic. Please answer this question: ${stage.question} Use 2-3 sentences or STAR (situation, task, action, result).`;
 }
 
+function teacherMetaReply(stage, userText) {
+  const lower = (userText || "").toLowerCase();
+  if (/\b1 sentence|one sentence\b/.test(lower)) {
+    return `One sentence can work, but 2-3 concise sentences is better. Please answer: ${stage.question}`;
+  }
+  return `Good question. Keep it simple and focused. Now answer: ${stage.question}`;
+}
+
 export function runStartTurn(session) {
   session.stageIndex = 0;
   session.turnIndex = 0;
@@ -233,13 +241,15 @@ export function runUserTurn(session, userText = "", routing = null) {
 
   const currentStage = stageByIndex(session.stageIndex);
   const answerEval = evaluateAnswer(currentStage.id, cleanUserText);
-  const intent = routing?.intent || "answer";
-  const addressedTo = routing?.addressedTo || "teacher";
+  const intent = String(routing?.intent || "ANSWER").toUpperCase();
+  const addressedTo = routing?.targetAgent || routing?.addressedTo || "teacher";
   const recommendedAction = routing?.recommendedAction || "continue_interview";
+  const shouldAdvanceState = Boolean(routing?.shouldAdvanceState ?? (intent === "ANSWER"));
   const evaluation = {
     stage: currentStage.id,
     addressedTo,
     recommendedAction,
+    shouldAdvanceState,
     intent,
     isRelevant: answerEval.isRelevant,
     issues: answerEval.issues,
@@ -252,7 +262,11 @@ export function runUserTurn(session, userText = "", routing = null) {
   let grammarIssues = evaluation.isRelevant ? [] : answerEval.issues;
   const turns = [];
 
-  if (recommendedAction === "peer_reply" && ["alex", "sofia", "jamal"].includes(addressedTo) && (intent === "clarification" || intent === "ask_peer")) {
+  if (
+    recommendedAction === "peer_reply" &&
+    ["alex", "sofia", "jamal"].includes(addressedTo) &&
+    (intent === "CLARIFICATION" || intent === "ASK_CLASSMATE")
+  ) {
     classmateRole = addressedTo;
     turns.push(toTurn(classmateRole, peerClarificationReply(classmateRole)));
     turns.push(toTurn("teacher", teacherBridgeToQuestion(currentStage)));
@@ -261,28 +275,31 @@ export function runUserTurn(session, userText = "", routing = null) {
     liveTip = `Clarified. Now answer the teacher with ${currentStage.requirementHint}.`;
     scoreDeltas = { confidence: 0, vocabulary: 0, clarity: 1 };
     grammarIssues = [];
-  } else if ((intent === "clarification" || intent === "ask_teacher" || intent === "repeat") && (addressedTo === "teacher" || addressedTo === "unknown")) {
+  } else if (
+    (recommendedAction === "teacher_clarify_question" || intent === "CLARIFICATION") &&
+    (addressedTo === "teacher" || addressedTo === "unknown")
+  ) {
     turns.push(toTurn("teacher", teacherClarifyQuestion(currentStage)));
     evaluation.isRelevant = false;
     evaluation.issues = ["User asked teacher clarification."];
     liveTip = `Teacher clarified the prompt. Include ${currentStage.requirementHint}.`;
     scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -1 };
     grammarIssues = evaluation.issues;
-  } else if (intent === "off_topic") {
+  } else if (intent === "OFFTOPIC" || recommendedAction === "teacher_redirect") {
     turns.push(toTurn("teacher", teacherOffTopicRedirect(currentStage)));
     evaluation.isRelevant = false;
     evaluation.issues = ["Off-topic, answer the asked question."];
     liveTip = `Off-topic detected. Answer exactly: ${currentStage.question}`;
     scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -2 };
     grammarIssues = evaluation.issues;
-  } else if (intent === "meta" || intent === "end") {
-    turns.push(toTurn("teacher", "We can discuss process later. Please answer the current interview question now."));
+  } else if (intent === "META" || recommendedAction === "handle_meta") {
+    turns.push(toTurn("teacher", teacherMetaReply(currentStage, cleanUserText)));
     evaluation.isRelevant = false;
-    evaluation.issues = ["Meta/end message during active interview."];
+    evaluation.issues = ["Meta question handled without stage advance."];
     liveTip = `Return to the prompt: ${currentStage.question}`;
-    scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -1 };
+    scoreDeltas = { confidence: 0, vocabulary: 0, clarity: 0 };
     grammarIssues = evaluation.issues;
-  } else if (intent === "answer" && evaluation.isRelevant) {
+  } else if (intent === "ANSWER" && evaluation.isRelevant && shouldAdvanceState) {
     const nextStage = clampQuestionIndex(session.stageIndex + 1);
     turns.push(toTurn("teacher", teacherRelevantFollowUp({
       userText: cleanUserText,
@@ -315,7 +332,7 @@ export function runUserTurn(session, userText = "", routing = null) {
     turns,
     feedback: session.coach,
     liveTip,
-    evaluation,
+    evaluation: { ...evaluation, reason: routing?.reason || "" },
   };
 }
 
