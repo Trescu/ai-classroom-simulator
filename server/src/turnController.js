@@ -214,7 +214,37 @@ function teacherMetaReply(stage, userText) {
   return `Good question. Keep it simple and focused. Now answer: ${stage.question}`;
 }
 
-export function runStartTurn(session) {
+function modeTip(mode, learnerTip, stage) {
+  if (mode === "teacher") {
+    return `Teacher tip: Prompt the learner to answer "${stage.question}" with one measurable result.`;
+  }
+  return learnerTip;
+}
+
+function modeFeedback(mode, feedback, stage, evaluation) {
+  if (mode !== "teacher") return feedback;
+
+  const commonErrors = evaluation?.issues?.length
+    ? evaluation.issues
+    : ["Missing measurable result", "Weak impact wording"];
+
+  return {
+    ...feedback,
+    tips: [
+      `Guide learners on this stage: ${stage.requirementHint}.`,
+      "Ask one follow-up and request one concrete number.",
+    ],
+    grammarIssues: commonErrors,
+    teacherMetrics: {
+      studentGrowth: feedback.confidence,
+      engagement: Math.max(35, Math.min(98, feedback.clarity + 3)),
+      clarityTrend: feedback.clarity,
+      commonErrors,
+    },
+  };
+}
+
+export function runStartTurn(session, mode = "learner") {
   session.stageIndex = 0;
   session.turnIndex = 0;
   session.speakerRotationIndex = 0;
@@ -228,13 +258,13 @@ export function runStartTurn(session) {
   return {
     session,
     turns: [teacher],
-    feedback: session.coach,
-    liveTip: "Stay on topic: background, role/study, and internship intent.",
+    feedback: modeFeedback(mode, session.coach, stageByIndex(0), { issues: [] }),
+    liveTip: modeTip(mode, "Stay on topic: background, role/study, and internship intent.", stageByIndex(0)),
     evaluation: { stage: stageByIndex(0).id, isRelevant: true, issues: [] },
   };
 }
 
-export function runUserTurn(session, userText = "", routing = null) {
+export function runUserTurn(session, userText = "", routing = null, mode = "learner") {
   const cleanUserText = userText.trim();
   const userEntry = toTurn("user", cleanUserText || "(No answer provided)");
   appendHistory(session, [userEntry]);
@@ -330,22 +360,23 @@ export function runUserTurn(session, userText = "", routing = null) {
   return {
     session,
     turns,
-    feedback: session.coach,
-    liveTip,
+    feedback: modeFeedback(mode, session.coach, currentStage, evaluation),
+    liveTip: modeTip(mode, liveTip, currentStage),
     evaluation: { ...evaluation, reason: routing?.reason || "" },
   };
 }
 
-export function runNextTurn(session) {
+export function runNextTurn(session, mode = "learner") {
   const stage = stageByIndex(session.stageIndex);
   const teacher = toTurn("teacher", `Please answer the current question first: ${stage.question}`);
   appendHistory(session, [teacher]);
   session.turnIndex += 1;
+  const evaluation = { stage: stage.id, isRelevant: false, issues: ["Awaiting user answer."] };
   return {
     session,
     turns: [teacher],
-    feedback: session.coach,
-    liveTip: `Stay on topic. Include ${stage.requirementHint}.`,
-    evaluation: { stage: stage.id, isRelevant: false, issues: ["Awaiting user answer."] },
+    feedback: modeFeedback(mode, session.coach, stage, evaluation),
+    liveTip: modeTip(mode, `Stay on topic. Include ${stage.requirementHint}.`, stage),
+    evaluation,
   };
 }

@@ -20,7 +20,7 @@ export async function runTurn({
   normalizeScenario(scenario);
 
   if (action === "start") {
-    return runStartTurn(safeSession);
+    return runStartTurn(safeSession, mode);
   }
 
   if (action === "user_turn") {
@@ -47,11 +47,11 @@ export async function runTurn({
       reason: routing.reason,
     });
 
-    return runUserTurn(safeSession, routing.normalizedUserMessage || userText, routing);
+    return runUserTurn(safeSession, routing.normalizedUserMessage || userText, routing, mode);
   }
 
   if (action === "next_turn") {
-    return runNextTurn(safeSession);
+    return runNextTurn(safeSession, mode);
   }
 
   return {

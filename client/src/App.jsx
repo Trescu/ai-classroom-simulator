@@ -3,6 +3,7 @@ import { Mic, MicOff, SendHorizonal, Sparkles } from 'lucide-react';
 import ChatMessage from './components/ChatMessage';
 import Dropdown from './components/Dropdown';
 import FeedbackPanel from './components/FeedbackPanel';
+import TeacherPanel from './components/TeacherPanel';
 
 const SESSION_STATE = {
   IDLE: 'IDLE',
@@ -42,12 +43,17 @@ const createInitialSession = () => ({
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const defaultLiveTipForMode = (mode) =>
+  mode === 'teacher'
+    ? 'Prompt the learner to give one measurable result in their next answer.'
+    : 'Add one concrete example to show your impact.';
+
 export default function App() {
   const [mode, setMode] = useState('learner');
   const [scenario, setScenario] = useState('tech_interview');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [liveTip, setLiveTip] = useState('Add one concrete example to show your impact.');
+  const [liveTip, setLiveTip] = useState(defaultLiveTipForMode('learner'));
   const [feedback, setFeedback] = useState(initialFeedback);
   const [session, setSession] = useState(createInitialSession());
   const [sessionState, setSessionState] = useState(SESSION_STATE.IDLE);
@@ -66,6 +72,12 @@ export default function App() {
   const canUseNextTurn = sessionState === SESSION_STATE.WAITING_USER || sessionState === SESSION_STATE.IDLE;
   const speakingNow = sessionState === SESSION_STATE.CLASS_STARTED || sessionState === SESSION_STATE.AI_TURN;
   const busy = [SESSION_STATE.CLASS_STARTED, SESSION_STATE.AI_TURN].includes(sessionState);
+
+  useEffect(() => {
+    if (sessionState === SESSION_STATE.IDLE) {
+      setLiveTip(defaultLiveTipForMode(mode));
+    }
+  }, [mode, sessionState]);
 
   useEffect(() => {
     if (!messagesRef.current) return;
@@ -168,7 +180,7 @@ export default function App() {
         setSession(data.session);
       }
       setFeedback(data.feedback || initialFeedback);
-      setLiveTip(data.liveTip || 'Add one concrete example to show your impact.');
+      setLiveTip(data.liveTip || defaultLiveTipForMode(mode));
 
       if (turns.length > 0) {
         setSessionState(playbackState);
@@ -185,7 +197,9 @@ export default function App() {
   const startClass = async () => {
     setMessages([]);
     setFeedback(initialFeedback);
-    setLiveTip('Start class to receive personalized coaching.');
+    setLiveTip(mode === 'teacher'
+      ? 'Start class to view teacher-focused classroom analytics.'
+      : 'Start class to receive personalized coaching.');
     setInput('');
     const freshSession = createInitialSession();
     setSession(freshSession);
@@ -257,6 +271,7 @@ export default function App() {
           <div>
             <p className="text-3xl font-bold tracking-wide">AI CLASSROOM SIMULATOR</p>
             <p className="text-indigo-200">Job interview & language practice with multi-agent AI</p>
+            <p className="mt-1 text-xs uppercase tracking-widest text-indigo-100/80">Mode: {mode}</p>
           </div>
           <div className="flex items-center gap-2">
             <Dropdown value={mode} options={modeOptions} onChange={setMode} ariaLabel="Select mode" />
@@ -338,7 +353,9 @@ export default function App() {
                   className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.18),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02)_44%,rgba(255,255,255,0))]"
                 />
                 <div className="relative z-10 h-full min-h-0">
-                  <FeedbackPanel feedback={feedback} liveTip={liveTip} />
+                  {mode === 'teacher'
+                    ? <TeacherPanel feedback={feedback} liveTip={liveTip} />
+                    : <FeedbackPanel feedback={feedback} liveTip={liveTip} />}
                 </div>
               </aside>
             </div>
