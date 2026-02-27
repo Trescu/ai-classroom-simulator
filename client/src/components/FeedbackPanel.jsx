@@ -16,7 +16,7 @@ export default function FeedbackPanel({ feedback, liveTip }) {
   return (
     <aside className="h-full w-full rounded-3xl border border-white/15 bg-panel p-5 backdrop-blur-xl shadow-glow flex flex-col min-h-0 overflow-hidden">
       <h3 className="text-xl font-semibold tracking-wide text-indigo-100 flex-none">Performance Coach</h3>
-      <div className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1">
+      <div className="mt-4 flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1">
         <div className="rounded-2xl bg-white/10 p-4 text-indigo-100/90">
           <p className="text-xs uppercase tracking-widest text-indigo-200">Live Tip</p>
           <p className="mt-1 text-sm">{liveTip}</p>

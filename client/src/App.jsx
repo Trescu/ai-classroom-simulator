@@ -159,7 +159,7 @@ export default function App() {
         <main className="app-main p-3 lg:p-4">
           <div className="main-grid gap-3 lg:gap-4">
             <section className="chat-panel rounded-3xl border border-white/10 bg-panel p-4">
-              <div className="messages-area space-y-3 pr-1">
+              <div className="messages-area no-scrollbar space-y-3 pr-1">
               {messages.map((message, idx) => <ChatMessage key={`${idx}-${message.speaker}`} message={message} />)}
               {loading && <p className="text-indigo-300 animate-pulse">AI is speaking...</p>}
               </div>
