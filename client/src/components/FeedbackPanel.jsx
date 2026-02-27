@@ -14,8 +14,11 @@ function Meter({ label, value, accent = 'bg-indigo-400', suffix = '' }) {
 
 export default function FeedbackPanel({ feedback, liveTip }) {
   return (
-    <aside className="feedback-card h-full w-full rounded-3xl border border-white/15 shadow-glow min-h-0 overflow-hidden">
-      <div className="feedback-card-surface bg-panel backdrop-blur-xl" aria-hidden="true" />
+    <aside className="relative h-full w-full min-h-0 overflow-hidden rounded-3xl border border-white/15 bg-panel backdrop-blur-xl shadow-glow">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02)_42%,rgba(255,255,255,0))]"
+      />
       <div className="relative z-[1] h-full p-5 flex flex-col min-h-0">
         <h3 className="text-xl font-semibold tracking-wide text-indigo-100 flex-none">Performance Coach</h3>
         <div className="mt-4 flex-1 min-h-0 overflow-y-auto no-scrollbar pr-1">
