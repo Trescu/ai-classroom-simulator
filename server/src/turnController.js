@@ -183,6 +183,29 @@ function buildRefuseTeacherReply(stage) {
   return `No problem. Please give a brief attempt anyway so we can practice. Current question: ${stage.question}`;
 }
 
+function peerClarificationReply(peerRole) {
+  if (peerRole === "alex") {
+    return "I mean: pick one concrete example, add one number, and keep it tight in 2-3 sentences.";
+  }
+  if (peerRole === "sofia") {
+    return "I meant you can answer step by step: one point about your role, then one clear result.";
+  }
+  return "I mean keep it simple: what you did, why it mattered, and one short result.";
+}
+
+function teacherBridgeToQuestion(stage) {
+  return `Good clarification. Now let us return to the interview question: ${stage.question}`;
+}
+
+function teacherClarifyQuestion(stage) {
+  const examples = clarificationExamples(stage);
+  return `Sure. In simple words, answer with ${stage.requirementHint}. Example: ${examples[0]} Now give your own short version.`;
+}
+
+function teacherOffTopicRedirect(stage) {
+  return `You are off-topic. Please answer this question: ${stage.question} Use 2-3 sentences or STAR (situation, task, action, result).`;
+}
+
 export function runStartTurn(session) {
   session.stageIndex = 0;
   session.turnIndex = 0;
@@ -203,78 +226,82 @@ export function runStartTurn(session) {
   };
 }
 
-export function runUserTurn(session, userText = "", analysis = null) {
+export function runUserTurn(session, userText = "", routing = null) {
   const cleanUserText = userText.trim();
   const userEntry = toTurn("user", cleanUserText || "(No answer provided)");
   appendHistory(session, [userEntry]);
 
   const currentStage = stageByIndex(session.stageIndex);
   const answerEval = evaluateAnswer(currentStage.id, cleanUserText);
-  const intent = analysis?.intent || "ANSWER";
+  const intent = routing?.intent || "answer";
+  const addressedTo = routing?.addressedTo || "teacher";
+  const recommendedAction = routing?.recommendedAction || "continue_interview";
   const evaluation = {
     stage: currentStage.id,
+    addressedTo,
+    recommendedAction,
     intent,
     isRelevant: answerEval.isRelevant,
     issues: answerEval.issues,
   };
 
-  const classmateRole = pickClassmate(session.speakerRotationIndex);
-  const classmate = toTurn(
-    classmateRole,
-    classmateTemplate(classmateRole, evaluation.isRelevant && intent === "ANSWER")
-  );
-  let teacherText;
+  const defaultClassmateRole = pickClassmate(session.speakerRotationIndex);
+  let classmateRole = defaultClassmateRole;
   let liveTip = answerEval.tip;
   let scoreDeltas = answerEval.scoreDeltas;
   let grammarIssues = evaluation.isRelevant ? [] : answerEval.issues;
+  const turns = [];
 
-  if (analysis?.tip) {
-    liveTip = analysis.tip;
-  }
-  if (analysis?.scoreDeltas) {
-    scoreDeltas = analysis.scoreDeltas;
-  }
-
-  if (intent === "CLARIFY") {
-    teacherText = analysis?.suggestedTeacherReply || buildClarifyTeacherReply(currentStage, currentStage.requirementHint);
+  if (recommendedAction === "peer_reply" && ["alex", "sofia", "jamal"].includes(addressedTo) && (intent === "clarification" || intent === "ask_peer")) {
+    classmateRole = addressedTo;
+    turns.push(toTurn(classmateRole, peerClarificationReply(classmateRole)));
+    turns.push(toTurn("teacher", teacherBridgeToQuestion(currentStage)));
     evaluation.isRelevant = false;
-    evaluation.issues = analysis?.issues?.length ? analysis.issues : ["User asked for clarification."];
-    liveTip = analysis?.tip || `Clarify first, then answer with ${currentStage.requirementHint}.`;
-    scoreDeltas = analysis?.scoreDeltas || { confidence: -1, vocabulary: 0, clarity: -1 };
-    grammarIssues = evaluation.issues;
-  } else if (intent === "REFUSE") {
-    teacherText = analysis?.suggestedTeacherReply || buildRefuseTeacherReply(currentStage);
+    evaluation.issues = ["Peer clarification flow"];
+    liveTip = `Clarified. Now answer the teacher with ${currentStage.requirementHint}.`;
+    scoreDeltas = { confidence: 0, vocabulary: 0, clarity: 1 };
+    grammarIssues = [];
+  } else if ((intent === "clarification" || intent === "ask_teacher" || intent === "repeat") && (addressedTo === "teacher" || addressedTo === "unknown")) {
+    turns.push(toTurn("teacher", teacherClarifyQuestion(currentStage)));
     evaluation.isRelevant = false;
-    evaluation.issues = analysis?.issues?.length ? analysis.issues : ["User refused to answer."];
-    liveTip = analysis?.tip || `Give at least one short attempt with ${currentStage.requirementHint}.`;
-    scoreDeltas = analysis?.scoreDeltas || { confidence: -1, vocabulary: 0, clarity: -1 };
+    evaluation.issues = ["User asked teacher clarification."];
+    liveTip = `Teacher clarified the prompt. Include ${currentStage.requirementHint}.`;
+    scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -1 };
     grammarIssues = evaluation.issues;
-  } else if (intent === "OFFTOPIC") {
-    teacherText = analysis?.suggestedTeacherReply || teacherIrrelevantFollowUp({ requirementHint: currentStage.requirementHint });
+  } else if (intent === "off_topic") {
+    turns.push(toTurn("teacher", teacherOffTopicRedirect(currentStage)));
     evaluation.isRelevant = false;
-    evaluation.issues = analysis?.issues?.length ? analysis.issues : answerEval.issues;
-    liveTip = analysis?.tip || `Stay on topic. Include ${currentStage.requirementHint}.`;
-    scoreDeltas = analysis?.scoreDeltas || { confidence: -1, vocabulary: 0, clarity: -2 };
+    evaluation.issues = ["Off-topic, answer the asked question."];
+    liveTip = `Off-topic detected. Answer exactly: ${currentStage.question}`;
+    scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -2 };
     grammarIssues = evaluation.issues;
-  }
-
-  if (intent === "ANSWER" && evaluation.isRelevant) {
+  } else if (intent === "meta" || intent === "end") {
+    turns.push(toTurn("teacher", "We can discuss process later. Please answer the current interview question now."));
+    evaluation.isRelevant = false;
+    evaluation.issues = ["Meta/end message during active interview."];
+    liveTip = `Return to the prompt: ${currentStage.question}`;
+    scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -1 };
+    grammarIssues = evaluation.issues;
+  } else if (intent === "answer" && evaluation.isRelevant) {
     const nextStage = clampQuestionIndex(session.stageIndex + 1);
-    teacherText = teacherRelevantFollowUp({
+    turns.push(toTurn("teacher", teacherRelevantFollowUp({
       userText: cleanUserText,
       nextStageIndex: nextStage,
-    });
+    })));
+    turns.push(toTurn(defaultClassmateRole, classmateTemplate(defaultClassmateRole, true)));
     session.stageIndex = nextStage;
+    session.speakerRotationIndex = (session.speakerRotationIndex + 1) % 3;
   } else {
-    if (!teacherText) {
-      teacherText = teacherIrrelevantFollowUp({ requirementHint: currentStage.requirementHint });
-    }
+    turns.push(toTurn("teacher", teacherIrrelevantFollowUp({ requirementHint: currentStage.requirementHint })));
+    turns.push(toTurn(defaultClassmateRole, classmateTemplate(defaultClassmateRole, false)));
+    evaluation.isRelevant = false;
+    liveTip = `Stay on topic. Include ${currentStage.requirementHint}.`;
+    scoreDeltas = { confidence: -1, vocabulary: 0, clarity: -2 };
+    grammarIssues = answerEval.issues;
+    session.speakerRotationIndex = (session.speakerRotationIndex + 1) % 3;
   }
 
-  const teacher = toTurn("teacher", teacherText);
-  appendHistory(session, [teacher, classmate]);
-
-  session.speakerRotationIndex = (session.speakerRotationIndex + 1) % 3;
+  appendHistory(session, turns);
   session.turnIndex += 1;
   session.coach = applyScoreDeltas(
     session.coach,
@@ -285,7 +312,7 @@ export function runUserTurn(session, userText = "", analysis = null) {
 
   return {
     session,
-    turns: [teacher, classmate],
+    turns,
     feedback: session.coach,
     liveTip,
     evaluation,

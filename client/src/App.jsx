@@ -147,7 +147,14 @@ export default function App() {
       const res = await fetch('/api/classroom/turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, scenario, action, session: requestSession, userText }),
+        body: JSON.stringify({
+          mode,
+          scenario,
+          action,
+          session: requestSession,
+          userText,
+          recentTurns: (requestSession?.history || []).slice(-6),
+        }),
       });
 
       if (!res.ok) {

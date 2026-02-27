@@ -20,6 +20,7 @@ app.post('/api/classroom/turn', async (req, res) => {
     session = {},
     userText,
     userInput,
+    recentTurns = [],
   } = body;
 
   const fallbackAction = action || (session?.turnIndex ? 'user_turn' : 'start');
@@ -32,6 +33,7 @@ app.post('/api/classroom/turn', async (req, res) => {
       action: fallbackAction,
       session,
       userText: fallbackUserText,
+      recentTurns,
     });
     res.json(result);
   } catch {
@@ -47,7 +49,7 @@ app.post('/api/classroom/turn', async (req, res) => {
         grammarIssues: ['Could not evaluate this turn'],
       },
       liveTip: 'Service recovered with fallback response.',
-      evaluation: { stage: 'unknown', intent: 'OFFTOPIC', isRelevant: false, issues: ['Could not evaluate this turn'] },
+      evaluation: { stage: 'unknown', intent: 'off_topic', isRelevant: false, issues: ['Could not evaluate this turn'] },
     });
   }
 });
