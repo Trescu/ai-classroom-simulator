@@ -264,6 +264,90 @@ export function runStartTurn(session, mode = "learner") {
   };
 }
 
+function teacherObservationReply(stageId, speakerRole) {
+  if (stageId === "intro") {
+    return speakerRole === "alex"
+      ? "I am Alex, a software student focused on backend systems, and I want this internship to build production impact."
+      : "I am building my confidence in interviews and I want to explain my background clearly.";
+  }
+  if (stageId === "achievement") {
+    return "I improved deployment reliability by 28% by adding CI checks and alerting.";
+  }
+  if (stageId === "project") {
+    return "I built a team scheduling app, owned API design, and cut booking errors by 35%.";
+  }
+  if (stageId === "challenge") {
+    return "We had a conflict on scope, so I aligned the team on priorities and shipped on time.";
+  }
+  if (stageId === "why") {
+    return "My strengths in backend ownership and collaboration fit this internship well.";
+  }
+  return "I am ready to contribute, learn quickly, and create measurable value from day one.";
+}
+
+export function runTeacherStartTurn(session) {
+  session.stageIndex = 0;
+  session.turnIndex = 0;
+  session.speakerRotationIndex = 0;
+  session.history = [];
+  session.coach = createInitialCoach();
+
+  const briefing = toTurn(
+    "teacher",
+    "Teacher briefing: Your job is to coach the learner. Set a goal (clarity/confidence/vocab) and then click Next Turn to begin."
+  );
+  const readiness = toTurn("alex", "Ready to observe.");
+  appendHistory(session, [briefing, readiness]);
+  session.turnIndex += 1;
+
+  const stage = stageByIndex(session.stageIndex);
+  const evaluation = { stage: stage.id, intent: "META", isRelevant: false, issues: ["Teacher briefing active."] };
+  return {
+    session,
+    turns: [briefing, readiness],
+    feedback: modeFeedback("teacher", session.coach, stage, evaluation),
+    liveTip: "Teacher tip: Set your coaching focus, then click Next Turn to launch the observed classroom event.",
+    evaluation,
+  };
+}
+
+export function runTeacherNextTurn(session, teachingAction = "") {
+  const stage = stageByIndex(session.stageIndex);
+  const peerRole = pickClassmate(session.speakerRotationIndex);
+  const turns = [];
+
+  if (teachingAction.trim()) {
+    turns.push(toTurn("teacher", `Teaching action received: "${teachingAction.trim()}". I will apply this focus to the next prompt.`));
+  }
+
+  turns.push(toTurn("teacher", `Classroom event: ask the learner - ${stage.question}`));
+  turns.push(toTurn(peerRole, teacherObservationReply(stage.id, peerRole)));
+  turns.push(toTurn("teacher", "Observation logged. Click Next Turn for the next classroom event."));
+
+  appendHistory(session, turns);
+  session.turnIndex += 1;
+  session.stageIndex = clampQuestionIndex(session.stageIndex + 1);
+  session.speakerRotationIndex = (session.speakerRotationIndex + 1) % 3;
+
+  const stageAfter = stageByIndex(session.stageIndex);
+  const tip = `Teacher tip: Prompt the learner to answer "${stageAfter.question}" with one measurable result.`;
+  session.coach = applyScoreDeltas(
+    session.coach,
+    teachingAction.trim() ? { confidence: 2, vocabulary: 1, clarity: 2 } : { confidence: 1, vocabulary: 1, clarity: 1 },
+    tip,
+    ["Monitor relevance", "Push for measurable impact"]
+  );
+
+  const evaluation = { stage: stage.id, intent: "META", isRelevant: false, issues: ["Teacher observation event executed."] };
+  return {
+    session,
+    turns,
+    feedback: modeFeedback("teacher", session.coach, stageAfter, evaluation),
+    liveTip: tip,
+    evaluation,
+  };
+}
+
 export function runUserTurn(session, userText = "", routing = null, mode = "learner") {
   const cleanUserText = userText.trim();
   const userEntry = toTurn("user", cleanUserText || "(No answer provided)");

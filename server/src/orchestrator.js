@@ -1,6 +1,13 @@
 import { stageByIndex } from "./mockEngine.js";
 import { routeUserMessage } from "./router.js";
-import { normalizeSession, runNextTurn, runStartTurn, runUserTurn } from "./turnController.js";
+import {
+  normalizeSession,
+  runNextTurn,
+  runStartTurn,
+  runTeacherNextTurn,
+  runTeacherStartTurn,
+  runUserTurn,
+} from "./turnController.js";
 
 function normalizeScenario(scenario = "tech_interview") {
   if (scenario === "interview") return "tech_interview";
@@ -20,10 +27,17 @@ export async function runTurn({
   normalizeScenario(scenario);
 
   if (action === "start") {
+    if (mode === "teacher") {
+      return runTeacherStartTurn(safeSession);
+    }
     return runStartTurn(safeSession, mode);
   }
 
   if (action === "user_turn") {
+    if (mode === "teacher") {
+      return runTeacherNextTurn(safeSession, userText);
+    }
+
     const stage = stageByIndex(safeSession.stageIndex);
     const historyForRouter = Array.isArray(recentTurns) && recentTurns.length
       ? recentTurns
@@ -51,6 +65,9 @@ export async function runTurn({
   }
 
   if (action === "next_turn") {
+    if (mode === "teacher") {
+      return runTeacherNextTurn(safeSession, userText);
+    }
     return runNextTurn(safeSession, mode);
   }
 
