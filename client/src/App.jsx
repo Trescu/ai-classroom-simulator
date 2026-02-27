@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Mic, MicOff, SendHorizonal, Sparkles } from 'lucide-react';
 import ChatMessage from './components/ChatMessage';
 import FeedbackPanel from './components/FeedbackPanel';
@@ -28,6 +28,44 @@ export default function App() {
     () => typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window),
     []
   );
+
+  useEffect(() => {
+    if (import.meta.env.PROD) return;
+
+    const logOverflow = () => {
+      const root = document.documentElement;
+      const scrollHeight = root.scrollHeight;
+      const clientHeight = root.clientHeight;
+
+      if (scrollHeight <= clientHeight + 1) return;
+
+      const firstOverflow = Array.from(document.querySelectorAll('*')).find((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.bottom > window.innerHeight + 1;
+      });
+
+      const styles = firstOverflow ? window.getComputedStyle(firstOverflow) : null;
+      console.warn('[overflow-debug] viewport overflow detected', {
+        scrollHeight,
+        clientHeight,
+        viewportHeight: window.innerHeight,
+        firstOverflowClassName: firstOverflow?.className || '(none)',
+        firstOverflowTag: firstOverflow?.tagName || '(none)',
+        computed: styles
+          ? {
+              height: styles.height,
+              minHeight: styles.minHeight,
+              padding: styles.padding,
+              margin: styles.margin,
+            }
+          : null,
+      });
+    };
+
+    logOverflow();
+    window.addEventListener('resize', logOverflow);
+    return () => window.removeEventListener('resize', logOverflow);
+  }, [messages.length, loading, input, mode, scenario]);
 
   const speak = (text) => {
     if (!window.speechSynthesis) return;
@@ -99,8 +137,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080b25] bg-[radial-gradient(circle_at_top,_rgba(87,68,207,0.5),_transparent_45%),radial-gradient(circle_at_bottom_right,_rgba(37,190,222,0.3),_transparent_30%)] text-white p-4 lg:p-8">
-      <div className="mx-auto max-w-7xl rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+    <div className="app-shell bg-[#080b25] bg-[radial-gradient(circle_at_top,_rgba(87,68,207,0.5),_transparent_45%),radial-gradient(circle_at_bottom_right,_rgba(37,190,222,0.3),_transparent_30%)] text-white">
+      <div className="app-frame mx-auto w-full max-w-7xl rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
         <header className="px-6 py-5 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-3xl font-bold tracking-wide">AI CLASSROOM SIMULATOR</p>
@@ -118,40 +156,44 @@ export default function App() {
           </div>
         </header>
 
-        <main className="p-4 lg:p-6 flex flex-col lg:flex-row gap-4">
-          <section className="flex-1 rounded-3xl border border-white/10 bg-panel p-4">
-            <div className="h-[480px] overflow-y-auto space-y-3 pr-1">
+        <main className="app-main p-3 lg:p-4">
+          <div className="main-grid gap-3 lg:gap-4">
+            <section className="chat-panel rounded-3xl border border-white/10 bg-panel p-4">
+              <div className="messages-area space-y-3 pr-1">
               {messages.map((message, idx) => <ChatMessage key={`${idx}-${message.speaker}`} message={message} />)}
               {loading && <p className="text-indigo-300 animate-pulse">AI is speaking...</p>}
-            </div>
+              </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={startClass} className="rounded-xl px-4 py-2 bg-emerald-500/70 hover:bg-emerald-500">Start Class</button>
-              <button onClick={() => callTurn('')} className="rounded-xl px-4 py-2 bg-indigo-500/70 hover:bg-indigo-500">Next Turn</button>
-            </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button onClick={startClass} className="rounded-xl px-4 py-2 bg-emerald-500/70 hover:bg-emerald-500">Start Class</button>
+                <button onClick={() => callTurn('')} className="rounded-xl px-4 py-2 bg-indigo-500/70 hover:bg-indigo-500">Next Turn</button>
+              </div>
 
-            <div className="mt-4 flex items-center gap-2">
-              <button
-                onClick={toggleListening}
-                className={`rounded-full p-3 ${isListening ? 'bg-rose-500' : 'bg-white/10'} border border-white/20`}
-                title={canUseSpeech ? 'Voice input' : 'Speech recognition not supported in this browser'}
-              >
-                {isListening ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendInput()}
-                className="flex-1 rounded-full bg-black/20 border border-white/10 px-4 py-3 outline-none"
-                placeholder="Type or speak your answer..."
-              />
-              <button onClick={sendInput} className="rounded-full p-3 bg-blue-500 hover:bg-blue-400">
-                <SendHorizonal size={18} />
-              </button>
-            </div>
-          </section>
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  onClick={toggleListening}
+                  className={`rounded-full p-3 ${isListening ? 'bg-rose-500' : 'bg-white/10'} border border-white/20`}
+                  title={canUseSpeech ? 'Voice input' : 'Speech recognition not supported in this browser'}
+                >
+                  {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendInput()}
+                  className="flex-1 rounded-full bg-black/20 border border-white/10 px-4 py-3 outline-none"
+                  placeholder="Type or speak your answer..."
+                />
+                <button onClick={sendInput} className="rounded-full p-3 bg-blue-500 hover:bg-blue-400">
+                  <SendHorizonal size={18} />
+                </button>
+              </div>
+            </section>
 
-          <FeedbackPanel feedback={feedback} liveTip={liveTip} />
+            <div className="coach-column min-h-0 overflow-hidden">
+              <FeedbackPanel feedback={feedback} liveTip={liveTip} />
+            </div>
+          </div>
         </main>
 
         <footer className="px-6 pb-5 text-indigo-200/90 flex items-center gap-2 text-sm">
