@@ -111,6 +111,23 @@ body {
   overflow: hidden;
 }
 
+.feedback-card {
+  position: relative;
+  isolation: isolate;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  background-clip: padding-box;
+}
+
+.feedback-card-surface {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
 @media (min-width: 1024px) {
   .main-grid {
     grid-template-columns: minmax(0, 1fr) 360px;
