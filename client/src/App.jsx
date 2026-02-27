@@ -4,6 +4,15 @@ import ChatMessage from './components/ChatMessage';
 import Dropdown from './components/Dropdown';
 import FeedbackPanel from './components/FeedbackPanel';
 
+const SESSION_STATE = {
+  IDLE: 'IDLE',
+  TEACHER_OPENING: 'TEACHER_OPENING',
+  USER_INPUT: 'USER_INPUT',
+  PROCESSING: 'PROCESSING',
+  PLAYBACK: 'PLAYBACK',
+  ERROR: 'ERROR',
+};
+
 const initialFeedback = {
   confidence: 68,
   vocabulary: 62,
@@ -19,26 +28,50 @@ const modeOptions = [
 ];
 
 const scenarioOptions = [
-  { value: 'interview', label: 'Tech Interview' },
-  { value: 'language', label: 'Language Class' },
+  { value: 'tech_interview', label: 'Tech Interview' },
+  { value: 'language_class', label: 'Language Class' },
 ];
+
+const createInitialSession = () => ({
+  id: '',
+  stageIndex: 0,
+  turnIndex: 0,
+  speakerRotationIndex: 0,
+  awaitingUserReply: false,
+  history: [],
+});
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function App() {
   const [mode, setMode] = useState('learner');
-  const [scenario, setScenario] = useState('interview');
+  const [scenario, setScenario] = useState('tech_interview');
   const [messages, setMessages] = useState([]);
-  const [turn, setTurn] = useState(0);
   const [input, setInput] = useState('');
   const [liveTip, setLiveTip] = useState('Add one concrete example to show your impact.');
   const [feedback, setFeedback] = useState(initialFeedback);
-  const [loading, setLoading] = useState(false);
+  const [session, setSession] = useState(createInitialSession());
+  const [sessionState, setSessionState] = useState(SESSION_STATE.IDLE);
+  const [errorText, setErrorText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
+  const messagesRef = useRef(null);
+  const latestRequestRef = useRef(null);
 
   const canUseSpeech = useMemo(
     () => typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window),
     []
   );
+
+  const canSendInput = sessionState === SESSION_STATE.USER_INPUT;
+  const canUseNextTurn = sessionState === SESSION_STATE.USER_INPUT || sessionState === SESSION_STATE.IDLE;
+  const speakingNow = sessionState === SESSION_STATE.TEACHER_OPENING || sessionState === SESSION_STATE.PLAYBACK;
+  const busy = [SESSION_STATE.TEACHER_OPENING, SESSION_STATE.PROCESSING, SESSION_STATE.PLAYBACK].includes(sessionState);
+
+  useEffect(() => {
+    if (!messagesRef.current) return;
+    messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
+  }, [messages]);
 
   useEffect(() => {
     if (import.meta.env.PROD) return;
@@ -47,7 +80,6 @@ export default function App() {
       const root = document.documentElement;
       const scrollHeight = root.scrollHeight;
       const clientHeight = root.clientHeight;
-
       if (scrollHeight <= clientHeight + 1) return;
 
       const firstOverflow = Array.from(document.querySelectorAll('*')).find((el) => {
@@ -76,52 +108,117 @@ export default function App() {
     logOverflow();
     window.addEventListener('resize', logOverflow);
     return () => window.removeEventListener('resize', logOverflow);
-  }, [messages.length, loading, input, mode, scenario]);
+  }, [messages.length, input, mode, scenario, sessionState]);
 
-  const speak = (text) => {
-    if (!window.speechSynthesis) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1.05;
-    window.speechSynthesis.speak(utterance);
+  const speakAsync = (text) =>
+    new Promise((resolve) => {
+      if (!window.speechSynthesis || !text) {
+        resolve();
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1;
+      utterance.pitch = 1.05;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+
+  const renderTurnsWithPlayback = async (turns) => {
+    for (const turn of turns) {
+      setMessages((prev) => [...prev, turn]);
+      await Promise.race([speakAsync(`${turn.speaker}. ${turn.text}`), wait(900)]);
+      await wait(100);
+    }
   };
 
-  const callTurn = async (userInput = '') => {
-    setLoading(true);
-    const transcript = [...messages, userInput ? { speaker: 'You', text: userInput, role: 'user' } : null].filter(Boolean);
+  const callTurn = async ({
+    action,
+    userText = '',
+    preState,
+    playbackState = SESSION_STATE.PLAYBACK,
+    sessionOverride,
+  }) => {
+    const requestSession = sessionOverride || session;
+    setSessionState(preState);
+    setErrorText('');
+    latestRequestRef.current = { action, userText };
+
     try {
       const res = await fetch('/api/classroom/turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, scenario, turn, transcript, userInput }),
+        body: JSON.stringify({ mode, scenario, action, session: requestSession, userText }),
       });
+
+      if (!res.ok) {
+        throw new Error(`Request failed with ${res.status}`);
+      }
+
       const data = await res.json();
-      const appended = [...transcript, ...(data.turns || [])];
-      setMessages(appended);
+      const turns = Array.isArray(data.turns) ? data.turns : [];
+
+      if (data.session) {
+        setSession(data.session);
+      }
       setFeedback(data.feedback || initialFeedback);
-      setLiveTip(data.liveTip || liveTip);
-      setTurn((t) => t + 1);
-      (data.turns || []).forEach((t, idx) => setTimeout(() => speak(`${t.speaker}. ${t.text}`), idx * 200));
-    } finally {
-      setLoading(false);
+      setLiveTip(data.liveTip || 'Add one concrete example to show your impact.');
+
+      if (turns.length > 0) {
+        setSessionState(playbackState);
+        await renderTurnsWithPlayback(turns);
+      }
+
+      setSessionState(SESSION_STATE.USER_INPUT);
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : 'Turn processing failed.');
+      setSessionState(SESSION_STATE.ERROR);
     }
   };
 
-  const startClass = () => {
+  const startClass = async () => {
     setMessages([]);
-    setTurn(0);
-    callTurn('');
+    setFeedback(initialFeedback);
+    setLiveTip('Start class to receive personalized coaching.');
+    setInput('');
+    const freshSession = createInitialSession();
+    setSession(freshSession);
+    await callTurn({
+      action: 'start',
+      userText: '',
+      preState: SESSION_STATE.TEACHER_OPENING,
+      playbackState: SESSION_STATE.TEACHER_OPENING,
+      sessionOverride: freshSession,
+    });
   };
 
-  const sendInput = () => {
-    if (!input.trim()) return;
+  const sendInput = async () => {
+    if (!canSendInput) return;
     const text = input.trim();
+    if (!text) return;
+
+    setMessages((prev) => [...prev, { speaker: 'You', role: 'user', text }]);
     setInput('');
-    callTurn(text);
+    await callTurn({ action: 'user_turn', userText: text, preState: SESSION_STATE.PROCESSING });
+  };
+
+  const nextTurn = async () => {
+    if (sessionState === SESSION_STATE.IDLE) {
+      await startClass();
+      return;
+    }
+    if (sessionState !== SESSION_STATE.USER_INPUT) return;
+    await callTurn({ action: 'next_turn', userText: '', preState: SESSION_STATE.PROCESSING });
+  };
+
+  const retryLast = async () => {
+    const payload = latestRequestRef.current;
+    if (!payload) return;
+    await callTurn({ action: payload.action, userText: payload.userText, preState: SESSION_STATE.PROCESSING });
   };
 
   const toggleListening = () => {
-    if (!canUseSpeech) return;
+    if (!canUseSpeech || !canSendInput) return;
 
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop();
@@ -164,32 +261,65 @@ export default function App() {
         <main className="app-main p-3 lg:p-4">
           <div className="main-grid gap-3 lg:gap-4">
             <section className="chat-panel rounded-3xl border border-white/10 bg-panel p-4">
-              <div className="messages-area no-scrollbar space-y-3 pr-1">
-              {messages.map((message, idx) => <ChatMessage key={`${idx}-${message.speaker}`} message={message} />)}
-              {loading && <p className="text-indigo-300 animate-pulse">AI is speaking...</p>}
+              <div ref={messagesRef} className="messages-area no-scrollbar space-y-3 pr-1">
+                {messages.map((message, idx) => <ChatMessage key={`${idx}-${message.speaker}`} message={message} />)}
+                {speakingNow && <p className="text-indigo-300 animate-pulse">Teacher speaking...</p>}
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button onClick={startClass} className="rounded-xl px-4 py-2 bg-emerald-500/70 hover:bg-emerald-500">Start Class</button>
-                <button onClick={() => callTurn('')} className="rounded-xl px-4 py-2 bg-indigo-500/70 hover:bg-indigo-500">Next Turn</button>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={startClass}
+                  disabled={busy}
+                  className="rounded-xl px-4 py-2 bg-emerald-500/70 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Start Class
+                </button>
+                <button
+                  onClick={nextTurn}
+                  disabled={!canUseNextTurn || busy}
+                  className="rounded-xl px-4 py-2 bg-indigo-500/70 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next Turn
+                </button>
+                <span className="text-xs text-indigo-200/80 uppercase tracking-widest">
+                  {sessionState}
+                </span>
+                {sessionState === SESSION_STATE.ERROR && (
+                  <button
+                    onClick={retryLast}
+                    className="rounded-xl px-3 py-1.5 text-xs bg-rose-500/70 hover:bg-rose-500"
+                  >
+                    Recover
+                  </button>
+                )}
               </div>
+
+              {sessionState === SESSION_STATE.ERROR && (
+                <p className="mt-2 text-sm text-rose-200/90">Session error: {errorText || 'Unknown issue.'}</p>
+              )}
 
               <div className="mt-4 flex items-center gap-2">
                 <button
                   onClick={toggleListening}
-                  className={`rounded-full p-3 ${isListening ? 'bg-rose-500' : 'bg-white/10'} border border-white/20`}
+                  disabled={!canSendInput}
+                  className={`rounded-full p-3 ${isListening ? 'bg-rose-500' : 'bg-white/10'} border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed`}
                   title={canUseSpeech ? 'Voice input' : 'Speech recognition not supported in this browser'}
                 >
                   {isListening ? <MicOff size={18} /> : <Mic size={18} />}
                 </button>
                 <input
                   value={input}
+                  disabled={!canSendInput}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && sendInput()}
-                  className="flex-1 rounded-full bg-black/20 border border-white/10 px-4 py-3 outline-none"
-                  placeholder="Type or speak your answer..."
+                  className="flex-1 rounded-full bg-black/20 border border-white/10 px-4 py-3 outline-none disabled:opacity-60"
+                  placeholder={canSendInput ? 'Type or speak your answer...' : 'Wait for your turn...'}
                 />
-                <button onClick={sendInput} className="rounded-full p-3 bg-blue-500 hover:bg-blue-400">
+                <button
+                  onClick={sendInput}
+                  disabled={!canSendInput || !input.trim()}
+                  className="rounded-full p-3 bg-blue-500 hover:bg-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   <SendHorizonal size={18} />
                 </button>
               </div>
@@ -210,7 +340,7 @@ export default function App() {
         </main>
 
         <footer className="px-6 pb-5 text-indigo-200/90 flex items-center gap-2 text-sm">
-          <Sparkles size={14} /> Real-time coaching • Voice-first • Multi-agent orchestration
+          <Sparkles size={14} /> Real-time coaching - Voice-first - Multi-agent orchestration
         </footer>
       </div>
     </div>
