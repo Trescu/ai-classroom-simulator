@@ -145,11 +145,11 @@ export default function App() {
             <p className="text-indigo-200">Job interview & language practice with multi-agent AI</p>
           </div>
           <div className="flex items-center gap-2">
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className="bg-white/10 rounded-xl px-3 py-2">
+            <select value={mode} onChange={(e) => setMode(e.target.value)} className="dark-select rounded-xl px-3 py-2">
               <option value="learner">Learner Mode</option>
               <option value="teacher">Teacher Mode</option>
             </select>
-            <select value={scenario} onChange={(e) => setScenario(e.target.value)} className="bg-white/10 rounded-xl px-3 py-2">
+            <select value={scenario} onChange={(e) => setScenario(e.target.value)} className="dark-select rounded-xl px-3 py-2">
               <option value="interview">Tech Interview</option>
               <option value="language">Language Class</option>
             </select>
