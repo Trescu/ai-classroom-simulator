@@ -74,34 +74,36 @@ body {
   height: 0;
 }
 
-.dark-select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  color-scheme: dark;
+.dropdown-trigger {
   background-color: rgba(255, 255, 255, 0.1);
-  color: #eef2ff;
   border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 4px 16px rgba(2, 6, 24, 0.22);
+  backdrop-filter: blur(8px);
 }
 
-.dark-select:focus {
-  outline: 2px solid rgba(129, 140, 248, 0.65);
+.dropdown-trigger:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.dropdown-trigger:focus-visible {
+  outline: 2px solid rgba(129, 140, 248, 0.7);
   outline-offset: 1px;
 }
 
-.dark-select option {
-  background-color: #0f1739;
-  color: #eef2ff;
+.dropdown-menu {
+  animation: dropdown-in 120ms ease-out;
+  transform-origin: top;
 }
 
-.dark-select option:checked {
-  background-color: #2a3c86;
-  color: #ffffff;
-}
-
-.dark-select option:hover {
-  background-color: #1c295f;
-  color: #ffffff;
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .coach-column {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Mic, MicOff, SendHorizonal, Sparkles } from 'lucide-react';
 import ChatMessage from './components/ChatMessage';
+import Dropdown from './components/Dropdown';
 import FeedbackPanel from './components/FeedbackPanel';
 
 const initialFeedback = {
@@ -11,6 +12,16 @@ const initialFeedback = {
   tips: ['Start class to receive personalized coaching.'],
   grammarIssues: ['Waiting for first response'],
 };
+
+const modeOptions = [
+  { value: 'learner', label: 'Learner Mode' },
+  { value: 'teacher', label: 'Teacher Mode' },
+];
+
+const scenarioOptions = [
+  { value: 'interview', label: 'Tech Interview' },
+  { value: 'language', label: 'Language Class' },
+];
 
 export default function App() {
   const [mode, setMode] = useState('learner');
@@ -145,14 +156,8 @@ export default function App() {
             <p className="text-indigo-200">Job interview & language practice with multi-agent AI</p>
           </div>
           <div className="flex items-center gap-2">
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className="dark-select rounded-xl px-3 py-2">
-              <option value="learner">Learner Mode</option>
-              <option value="teacher">Teacher Mode</option>
-            </select>
-            <select value={scenario} onChange={(e) => setScenario(e.target.value)} className="dark-select rounded-xl px-3 py-2">
-              <option value="interview">Tech Interview</option>
-              <option value="language">Language Class</option>
-            </select>
+            <Dropdown value={mode} options={modeOptions} onChange={setMode} ariaLabel="Select mode" />
+            <Dropdown value={scenario} options={scenarioOptions} onChange={setScenario} ariaLabel="Select scenario" />
           </div>
         </header>
 
