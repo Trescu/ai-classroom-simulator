@@ -195,8 +195,16 @@ export default function App() {
               </div>
             </section>
 
-            <div className="coach-column min-h-0 overflow-hidden">
-              <FeedbackPanel feedback={feedback} liveTip={liveTip} />
+            <div className="coach-column h-full min-h-0 overflow-hidden">
+              <aside className="relative h-full min-h-0 overflow-hidden rounded-3xl border border-white/10 bg-panel backdrop-blur-xl">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.18),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02)_44%,rgba(255,255,255,0))]"
+                />
+                <div className="relative z-10 h-full min-h-0">
+                  <FeedbackPanel feedback={feedback} liveTip={liveTip} />
+                </div>
+              </aside>
             </div>
           </div>
         </main>
