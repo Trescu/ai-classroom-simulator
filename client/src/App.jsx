@@ -6,10 +6,10 @@ import FeedbackPanel from './components/FeedbackPanel';
 
 const SESSION_STATE = {
   IDLE: 'IDLE',
-  TEACHER_OPENING: 'TEACHER_OPENING',
-  USER_INPUT: 'USER_INPUT',
-  PROCESSING: 'PROCESSING',
-  PLAYBACK: 'PLAYBACK',
+  CLASS_STARTED: 'CLASS_STARTED',
+  WAITING_USER: 'WAITING_USER',
+  AI_TURN: 'AI_TURN',
+  FINISHED: 'FINISHED',
   ERROR: 'ERROR',
 };
 
@@ -37,7 +37,6 @@ const createInitialSession = () => ({
   stageIndex: 0,
   turnIndex: 0,
   speakerRotationIndex: 0,
-  awaitingUserReply: false,
   history: [],
 });
 
@@ -63,10 +62,10 @@ export default function App() {
     []
   );
 
-  const canSendInput = sessionState === SESSION_STATE.USER_INPUT;
-  const canUseNextTurn = sessionState === SESSION_STATE.USER_INPUT || sessionState === SESSION_STATE.IDLE;
-  const speakingNow = sessionState === SESSION_STATE.TEACHER_OPENING || sessionState === SESSION_STATE.PLAYBACK;
-  const busy = [SESSION_STATE.TEACHER_OPENING, SESSION_STATE.PROCESSING, SESSION_STATE.PLAYBACK].includes(sessionState);
+  const canSendInput = sessionState === SESSION_STATE.WAITING_USER;
+  const canUseNextTurn = sessionState === SESSION_STATE.WAITING_USER || sessionState === SESSION_STATE.IDLE;
+  const speakingNow = sessionState === SESSION_STATE.CLASS_STARTED || sessionState === SESSION_STATE.AI_TURN;
+  const busy = [SESSION_STATE.CLASS_STARTED, SESSION_STATE.AI_TURN].includes(sessionState);
 
   useEffect(() => {
     if (!messagesRef.current) return;
@@ -136,7 +135,7 @@ export default function App() {
     action,
     userText = '',
     preState,
-    playbackState = SESSION_STATE.PLAYBACK,
+    playbackState = SESSION_STATE.AI_TURN,
     sessionOverride,
   }) => {
     const requestSession = sessionOverride || session;
@@ -169,7 +168,7 @@ export default function App() {
         await renderTurnsWithPlayback(turns);
       }
 
-      setSessionState(SESSION_STATE.USER_INPUT);
+      setSessionState(SESSION_STATE.WAITING_USER);
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : 'Turn processing failed.');
       setSessionState(SESSION_STATE.ERROR);
@@ -186,8 +185,8 @@ export default function App() {
     await callTurn({
       action: 'start',
       userText: '',
-      preState: SESSION_STATE.TEACHER_OPENING,
-      playbackState: SESSION_STATE.TEACHER_OPENING,
+      preState: SESSION_STATE.CLASS_STARTED,
+      playbackState: SESSION_STATE.CLASS_STARTED,
       sessionOverride: freshSession,
     });
   };
@@ -199,7 +198,7 @@ export default function App() {
 
     setMessages((prev) => [...prev, { speaker: 'You', role: 'user', text }]);
     setInput('');
-    await callTurn({ action: 'user_turn', userText: text, preState: SESSION_STATE.PROCESSING });
+    await callTurn({ action: 'user_turn', userText: text, preState: SESSION_STATE.AI_TURN });
   };
 
   const nextTurn = async () => {
@@ -207,14 +206,14 @@ export default function App() {
       await startClass();
       return;
     }
-    if (sessionState !== SESSION_STATE.USER_INPUT) return;
-    await callTurn({ action: 'next_turn', userText: '', preState: SESSION_STATE.PROCESSING });
+    if (sessionState !== SESSION_STATE.WAITING_USER) return;
+    await callTurn({ action: 'next_turn', userText: '', preState: SESSION_STATE.AI_TURN });
   };
 
   const retryLast = async () => {
     const payload = latestRequestRef.current;
     if (!payload) return;
-    await callTurn({ action: payload.action, userText: payload.userText, preState: SESSION_STATE.PROCESSING });
+    await callTurn({ action: payload.action, userText: payload.userText, preState: SESSION_STATE.AI_TURN });
   };
 
   const toggleListening = () => {
