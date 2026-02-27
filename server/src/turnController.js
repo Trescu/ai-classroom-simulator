@@ -2,10 +2,22 @@ import {
   clampQuestionIndex,
   classmateTemplate,
   pickClassmate,
-  teacherFollowUpTemplate,
+  stageByIndex,
   teacherIntroQuestion,
+  teacherIrrelevantFollowUp,
+  teacherRelevantFollowUp,
 } from "./mockEngine.js";
-import { createInitialCoach, updateCoachFeedback } from "./coachEngine.js";
+import { applyScoreDeltas, createInitialCoach } from "./coachEngine.js";
+
+const IMPACT_KEYWORDS = /\b(improved|reduced|increased|faster|faster than|boosted|grew|raised|cut|saved|impact|result|outcome)\b/i;
+const PROJECT_KEYWORDS = /\b(project|app|system|platform|tool|feature|task|assignment|build|built|developed)\b/i;
+const ROLE_KEYWORDS = /\b(i|my role|led|owner|responsible|implemented|managed|designed)\b/i;
+const RESULT_KEYWORDS = /\b(result|outcome|impact|improved|reduced|increased|delivered|achieved|launched)\b/i;
+const CHALLENGE_KEYWORDS = /\b(challenge|conflict|issue|problem|blocker|difficult)\b/i;
+const RESOLUTION_KEYWORDS = /\b(resolved|handled|fixed|addressed|solved|improved|communicated)\b/i;
+const WHY_KEYWORDS = /\b(fit|skills|experience|value|impact|team|role|internship|contribute)\b/i;
+const CLOSING_KEYWORDS = /\b(thank|excited|ready|contribute|value|opportunity|closing|summary)\b/i;
+const INTRO_KEYWORDS = /\b(student|internship|major|study|background|experience|developer|engineer|role)\b/i;
 
 function roleToSpeaker(role) {
   if (role === "teacher") return "Teacher";
@@ -38,6 +50,106 @@ function appendHistory(session, entries) {
   session.history = [...session.history, ...entries.map((e) => ({ role: e.role, text: e.text }))].slice(-60);
 }
 
+function hasNumber(text) {
+  return /\d/.test(text);
+}
+
+function normalizeText(text = "") {
+  return text.trim().toLowerCase();
+}
+
+function evaluateIntro(text) {
+  const issues = [];
+  if (text.length < 20) issues.push("Answer is too short for an introduction.");
+  if (!INTRO_KEYWORDS.test(text)) issues.push("Mention your background, current role, or internship intent.");
+  return issues;
+}
+
+function evaluateAchievement(text) {
+  const issues = [];
+  if (!hasNumber(text)) issues.push("Include at least one number or measurable metric.");
+  if (!IMPACT_KEYWORDS.test(text)) issues.push("State the impact or result using outcome words.");
+  return issues;
+}
+
+function evaluateProject(text) {
+  const checks = [
+    { ok: PROJECT_KEYWORDS.test(text), issue: "Mention a concrete project or task." },
+    { ok: ROLE_KEYWORDS.test(text), issue: "Explain your role or specific action." },
+    { ok: RESULT_KEYWORDS.test(text), issue: "Include the result or impact." },
+  ];
+  const hitCount = checks.filter((c) => c.ok).length;
+  if (hitCount >= 2) return [];
+  return checks.filter((c) => !c.ok).map((c) => c.issue);
+}
+
+function evaluateChallenge(text) {
+  const issues = [];
+  if (!CHALLENGE_KEYWORDS.test(text)) issues.push("Describe the challenge or conflict clearly.");
+  if (!RESOLUTION_KEYWORDS.test(text)) issues.push("Explain how you resolved the challenge.");
+  return issues;
+}
+
+function evaluateWhy(text) {
+  const issues = [];
+  if (!WHY_KEYWORDS.test(text)) issues.push("Link your fit and strengths to this internship.");
+  if (text.length < 25) issues.push("Add one concrete reason you are a strong fit.");
+  return issues;
+}
+
+function evaluateClosing(text) {
+  const issues = [];
+  if (!CLOSING_KEYWORDS.test(text)) issues.push("End with a clear closing value statement.");
+  if (text.length < 20) issues.push("Closing pitch is too short.");
+  return issues;
+}
+
+function stageRequirementHint(stageId) {
+  const stage = stageByIndex(
+    stageId === "intro" ? 0 :
+      stageId === "achievement" ? 1 :
+      stageId === "project" ? 2 :
+      stageId === "challenge" ? 3 :
+      stageId === "why" ? 4 : 5
+  );
+  return stage.requirementHint;
+}
+
+export function evaluateAnswer(stageId, userText) {
+  const text = normalizeText(userText);
+  let issues = [];
+
+  if (stageId === "intro") issues = evaluateIntro(text);
+  if (stageId === "achievement") issues = evaluateAchievement(text);
+  if (stageId === "project") issues = evaluateProject(text);
+  if (stageId === "challenge") issues = evaluateChallenge(text);
+  if (stageId === "why") issues = evaluateWhy(text);
+  if (stageId === "closing") issues = evaluateClosing(text);
+
+  const isRelevant = issues.length === 0;
+
+  if (!isRelevant) {
+    return {
+      stage: stageId,
+      isRelevant: false,
+      issues,
+      scoreDeltas: { confidence: -1, vocabulary: 0, clarity: -2 },
+      tip: `Stay on topic. Include ${stageRequirementHint(stageId)}.`,
+      nextQuestionAction: "retry",
+    };
+  }
+
+  const vocabularyBoost = stageId === "achievement" && hasNumber(text) ? 2 : 1;
+  return {
+    stage: stageId,
+    isRelevant: true,
+    issues: [],
+    scoreDeltas: { confidence: 2, vocabulary: vocabularyBoost, clarity: 2 },
+    tip: `Strong direction. Next, keep focus on ${stageRequirementHint(stageId)}.`,
+    nextQuestionAction: "advance",
+  };
+}
+
 export function runStartTurn(session) {
   session.stageIndex = 0;
   session.turnIndex = 0;
@@ -53,7 +165,8 @@ export function runStartTurn(session) {
     session,
     turns: [teacher],
     feedback: session.coach,
-    liveTip: "Answer in 2-3 sentences, then add one concrete detail.",
+    liveTip: "Stay on topic: background, role/study, and internship intent.",
+    evaluation: { stage: stageByIndex(0).id, isRelevant: true, issues: [] },
   };
 }
 
@@ -62,49 +175,59 @@ export function runUserTurn(session, userText = "") {
   const userEntry = toTurn("user", cleanUserText || "(No answer provided)");
   appendHistory(session, [userEntry]);
 
-  const currentStage = clampQuestionIndex(session.stageIndex);
-  const nextStage = clampQuestionIndex(currentStage + 1);
-  const teacher = toTurn(
-    "teacher",
-    teacherFollowUpTemplate({
-      userText: cleanUserText,
-      nextStageIndex: nextStage,
-    })
-  );
+  const currentStage = stageByIndex(session.stageIndex);
+  const evaluation = evaluateAnswer(currentStage.id, cleanUserText);
 
   const classmateRole = pickClassmate(session.speakerRotationIndex);
-  const classmate = toTurn(classmateRole, classmateTemplate(classmateRole));
+  const classmate = toTurn(classmateRole, classmateTemplate(classmateRole, evaluation.isRelevant));
+  let teacherText;
 
+  if (evaluation.isRelevant) {
+    const nextStage = clampQuestionIndex(session.stageIndex + 1);
+    teacherText = teacherRelevantFollowUp({
+      userText: cleanUserText,
+      nextStageIndex: nextStage,
+    });
+    session.stageIndex = nextStage;
+  } else {
+    teacherText = teacherIrrelevantFollowUp({ requirementHint: currentStage.requirementHint });
+  }
+
+  const teacher = toTurn("teacher", teacherText);
   appendHistory(session, [teacher, classmate]);
 
-  session.stageIndex = nextStage;
   session.speakerRotationIndex = (session.speakerRotationIndex + 1) % 3;
   session.turnIndex += 1;
-  session.coach = updateCoachFeedback({
-    previous: session.coach,
-    userText: cleanUserText,
-    stageIndex: session.stageIndex,
-  });
+  session.coach = applyScoreDeltas(
+    session.coach,
+    evaluation.scoreDeltas,
+    evaluation.tip,
+    evaluation.isRelevant ? [] : evaluation.issues
+  );
 
   return {
     session,
     turns: [teacher, classmate],
     feedback: session.coach,
-    liveTip: session.coach.tips[0],
+    liveTip: evaluation.tip,
+    evaluation: {
+      stage: currentStage.id,
+      isRelevant: evaluation.isRelevant,
+      issues: evaluation.issues,
+    },
   };
 }
 
 export function runNextTurn(session) {
-  const teacher = toTurn(
-    "teacher",
-    "Take a moment and answer the current question. Keep it concise and specific."
-  );
+  const stage = stageByIndex(session.stageIndex);
+  const teacher = toTurn("teacher", `Please answer the current question first: ${stage.question}`);
   appendHistory(session, [teacher]);
   session.turnIndex += 1;
   return {
     session,
     turns: [teacher],
     feedback: session.coach,
-    liveTip: "Use one concrete example and one measurable outcome.",
+    liveTip: `Stay on topic. Include ${stage.requirementHint}.`,
+    evaluation: { stage: stage.id, isRelevant: false, issues: ["Awaiting user answer."] },
   };
 }

@@ -47,6 +47,7 @@ app.post('/api/classroom/turn', async (req, res) => {
         grammarIssues: ['Could not evaluate this turn'],
       },
       liveTip: 'Service recovered with fallback response.',
+      evaluation: { stage: 'unknown', isRelevant: false, issues: ['Could not evaluate this turn'] },
     });
   }
 });

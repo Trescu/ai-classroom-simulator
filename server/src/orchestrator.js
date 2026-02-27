@@ -41,5 +41,6 @@ export async function runTurn({
     ],
     feedback: safeSession.coach,
     liveTip: "Keep one clear idea per answer.",
+    evaluation: { stage: "unknown", isRelevant: false, issues: ["Unknown action"] },
   };
 }
